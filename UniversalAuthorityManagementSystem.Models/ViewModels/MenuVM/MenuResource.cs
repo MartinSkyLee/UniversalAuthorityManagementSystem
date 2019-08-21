@@ -36,5 +36,6 @@ namespace UniversalAuthorityManagement.Models.ViewModels.MenuVM
         public string PermissionName { get; set; }
         public int? MenuId { get; set; }
         public string Description { get; set; }
+        public string Url { get; set; }
     }
 }

@@ -16,7 +16,7 @@ namespace UniversalAuthorityManagement.Service.Interface
         /// </summary>
         /// <param name="queryParameters"></param>
         /// <returns></returns>
-        PageResult GetResultList(QueryRoleParameters queryParameters);
+        PageResult GetResultList(QueryRoleParameters queryParameters, bool isSuper, bool isSysAdmin);
 
         /// <summary>
         /// 判断角色名称是否重名
@@ -44,11 +44,13 @@ namespace UniversalAuthorityManagement.Service.Interface
         /// <returns></returns>
         List<RolePermissionTreeData> GetPermissionByRoleId(int roleId);
 
+        List<RoleAuthorizationTreeVM> GetPermissionByRoleId(int roleId, LoginUserInfo userInfo);
+
         /// <summary>
         /// 更新角色授权
         /// </summary>
         /// <param name="rolePermission"></param>
         /// <param name="response"></param>
-        void UpdateRolePermission(RolePermissionViewModel rolePermission, ref ResponseModel response);
+        void UpdateRolePermission(RolePermissionViewModel rolePermission, LoginUserInfo userInfo, ref ResponseModel response);
     }
 }

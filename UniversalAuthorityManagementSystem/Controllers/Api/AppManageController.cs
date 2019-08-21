@@ -34,14 +34,26 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
             var response = ResponseModelFactory.CreateResultInstance;
             try
             {
-                PageResult result = _appService.GetResultList(queryParameters);
+                LoginUserInfo userInfo = GetUserInfo();
+                bool isSuper = _appService.IsSpuerAdministrator(userInfo.UserId);
+                PageResult result = new PageResult();
+                if (isSuper)
+                {
+                    result = _appService.GetResultList(queryParameters);
+                    response.SetData(result);
+                }
+                else
+                {
+                    result = _appService.GetResultList(queryParameters, userInfo.UserId);
+                    response.SetData(result);
+                }
 
-                response.SetData(result);
                 return Ok(response);
             }
             catch (Exception ex)
             {
-                response.SetError($"Msg: {ex.Message}.\r\n StackTrace: \r\n{ex.StackTrace}");
+                response.SetError();
+                response.Exception = $"Msg: {ex.Message}.\r\n StackTrace: \r\n{ex.StackTrace}";
                 return Ok(response);
             }
         }
@@ -55,6 +67,16 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
         public IActionResult CreateApp([FromBody] AppCreateViewModel appCreate)
         {
             var response = ResponseModelFactory.CreateInstance;
+            LoginUserInfo userInfo = GetUserInfo();
+            bool isSuper = _appService.IsSpuerAdministrator(userInfo.UserId);
+
+            //判断是否为超级管理员。若否，则无法创建应用程序
+            if (!isSuper)
+            {
+                response.SetNoPermission("新增失败，用户无权限新增应用程序。");
+                return Ok(response);
+            }
+
             if (appCreate == null)
             {
                 response.SetBadRequest();
@@ -71,11 +93,24 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
             appModel.IsDelete = false;
             appModel.CreateTime = DateTime.Now;
             appModel.UpdateTime = DateTime.Now;
+            appModel.CreateUserId = userInfo.UserId;
+            appModel.UpdateUserId = userInfo.UserId;
 
-            int? LoginUserId = GetLoginUserId();
-            appModel.CreateUserId = LoginUserId;
-            appModel.UpdateUserId = LoginUserId;
-
+            //默认创建该应用程序的内置系统管理员
+            appModel.TbRoles.Add(new TbRoles
+            {
+                RoleName = "系统管理员",
+                UseYn = true,
+                CreateUserId = userInfo.UserId,
+                CreateTime = DateTime.Now,
+                UpdateUserId = userInfo.UserId,
+                UpdateTime = DateTime.Now,
+                IsDelete = false,
+                Description = "内置系统管理员，不可删除或修改。",
+                IsBuiltInRole = true,
+                IsSuperAdministrator = false,
+                IsSystemAdmin = true
+            });
 
             if (!_appService.Create(appModel))
             {
@@ -97,6 +132,16 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
         public IActionResult EditApp([FromBody] AppEditViewModel appEdit)
         {
             var response = ResponseModelFactory.CreateInstance;
+            LoginUserInfo userInfo = GetUserInfo();
+            bool isSuper = _appService.IsSpuerAdministrator(userInfo.UserId);
+
+            //判断是否为超级管理员。若否，则无法创建应用程序
+            if (!isSuper)
+            {
+                response.SetNoPermission("编辑失败，用户无权限编辑应用程序。");
+                return Ok(response);
+            }
+
             if (appEdit == null)
             {
                 response.SetBadRequest();
@@ -120,8 +165,7 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
             _mapper.Map(appEdit, existingApp);
 
             existingApp.UpdateTime = DateTime.Now;
-            int? LoginUserId = GetLoginUserId();
-            existingApp.UpdateUserId = LoginUserId;
+            existingApp.UpdateUserId = userInfo.UserId;
 
             if (!_appService.Update(existingApp))
             {
@@ -142,6 +186,15 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
         public IActionResult DeleteApp([FromQuery] int id)
         {
             var response = ResponseModelFactory.CreateInstance;
+            LoginUserInfo userInfo = GetUserInfo();
+            bool isSuper = _appService.IsSpuerAdministrator(userInfo.UserId);
+
+            //判断是否为超级管理员。若否，则无法创建应用程序
+            if (!isSuper)
+            {
+                response.SetNoPermission("删除失败，用户无权限删除应用程序。");
+                return Ok(response);
+            }
 
             if (!ModelState.IsValid)
             {
@@ -149,7 +202,7 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
                 return Ok(response);
             }
 
-            var existingApp = _appService.GetSingle(id);
+            TbApplication existingApp = _appService.GetSingleApp(id);
 
             if (existingApp == null)
             {
@@ -159,8 +212,56 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
 
             existingApp.IsDelete = true;
             existingApp.UpdateTime = DateTime.Now;
-            int? LoginUserId = GetLoginUserId();
-            existingApp.UpdateUserId = LoginUserId;
+            existingApp.UpdateUserId = userInfo.UserId;
+
+            if (existingApp.TbRoles != null && existingApp.TbRoles.Count > 0)
+            {
+                foreach (var item in existingApp.TbRoles)
+                {
+                    item.IsDelete = true;
+                    item.UpdateTime = DateTime.Now;
+                    item.UpdateUserId = userInfo.UserId;
+                    if (item.TbRolePermission != null && item.TbRolePermission.Count > 0)
+                    {
+                        foreach (var rp in item.TbRolePermission)
+                        {
+                            rp.IsDelete = true;
+                            rp.UpdateTime = DateTime.Now;
+                            rp.UpdateUserId = userInfo.UserId;
+                        }
+                    }
+
+                    _appService.RemoveUserRole(item);
+                }
+            }
+
+            if (existingApp.TbMenu != null && existingApp.TbMenu.Count > 0)
+            {
+                foreach (var item in existingApp.TbMenu)
+                {
+                    item.IsDelete = true;
+                    item.UpdateTime = DateTime.Now;
+                    item.UpdateUserId = userInfo.UserId;
+                    if (item.TbPermission != null && item.TbPermission.Count > 0)
+                    {
+                        foreach (var p in item.TbPermission)
+                        {
+                            p.IsDelete = true;
+                            p.UpdateTime = DateTime.Now;
+                            p.UpdateUserId = userInfo.UserId;
+                            if (p.TbRolePermission != null && p.TbRolePermission.Count > 0)
+                            {
+                                foreach (var rp in p.TbRolePermission)
+                                {
+                                    rp.IsDelete = true;
+                                    rp.UpdateTime = DateTime.Now;
+                                    rp.UpdateUserId = userInfo.UserId;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
 
             if (!_appService.Update(existingApp))
             {

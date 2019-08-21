@@ -1,6 +1,7 @@
 ﻿using System;
 using AutoMapper;
 using DHSurvey.Common.Helper;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using UniversalAuthorityManagement.Models.DBEntities;
 using UniversalAuthorityManagement.Models.Query;
@@ -20,7 +21,7 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
         private readonly IAppService _appService;
         private readonly IMapper _mapper;
 
-        public UserManageController(IUserService userService,IAppService appService, IMapper mapper)
+        public UserManageController(IUserService userService, IAppService appService, IMapper mapper)
         {
             _userService = userService;
             _appService = appService;
@@ -38,14 +39,17 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
             var response = ResponseModelFactory.CreateResultInstance;
             try
             {
-                PageResult result = _userService.GetResultList(queryParameters);
+                LoginUserInfo userInfo = GetUserInfo();
+
+                PageResult result = _userService.GetResultList(queryParameters, userInfo);
 
                 response.SetData(result);
                 return Ok(response);
             }
             catch (Exception ex)
             {
-                response.SetError($"Msg: {ex.Message}.\r\n StackTrace: \r\n{ex.StackTrace}");
+                response.SetError();
+                response.Exception = $"Msg: {ex.Message}.\r\n StackTrace: \r\n{ex.StackTrace}";
                 return Ok(response);
             }
         }
@@ -59,6 +63,17 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
         public IActionResult CreateUser([FromBody] UserCreateViewModel userCreate)
         {
             var response = ResponseModelFactory.CreateInstance;
+            LoginUserInfo userInfo = GetUserInfo();
+            bool isSuper = _userService.IsSpuerAdministrator(userInfo.UserId);
+            bool isSysAdmin = _userService.IsSystemAdmin(userInfo.UserId);
+
+            //判断是否为超级管理员或者该系统管理员。
+            if (!(isSuper || isSysAdmin))
+            {
+                response.SetNoPermission("新增失败，无权限新增用户。");
+                return Ok(response);
+            }
+
             if (userCreate == null)
             {
                 response.SetBadRequest();
@@ -80,6 +95,8 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
             var userModel = _mapper.Map<TbSysUser>(userCreate);
             userModel.IsDelete = false;
             userModel.Password = MD5Helper.MD5Encrypt32(userModel.Password);
+            userModel.CreateUserId = userInfo.UserId;
+            userModel.CreateTime = DateTime.Now;
 
             if (userCreate.RoleIds != null && userCreate.RoleIds.Count > 0)
             {
@@ -137,7 +154,10 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
                 return Ok(response);
             }
 
-            _userService.UpdateUser(userEdit, ref response);
+            LoginUserInfo userInfo = GetUserInfo();
+            bool isSysAdmin = _userService.IsSystemAdmin(userInfo.UserId);
+
+            _userService.UpdateUser(userEdit, userInfo, isSysAdmin, ref response);
 
             return Ok(response);
         }
@@ -151,6 +171,10 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
         public IActionResult DeleteUser([FromQuery]int id)
         {
             var response = ResponseModelFactory.CreateInstance;
+
+            LoginUserInfo userInfo = GetUserInfo();
+            bool isSuper = _userService.IsSpuerAdministrator(userInfo.UserId);
+            bool isSysAdmin = _userService.IsSystemAdmin(userInfo.UserId);
 
             if (!ModelState.IsValid)
             {
@@ -166,7 +190,24 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
                 return Ok(response);
             }
 
+            //判断是否为超级管理员或者该系统管理员。
+            if (!(isSuper || isSysAdmin))
+            {
+                response.SetNoPermission("删除失败，无权限删除用户。");
+                return Ok(response);
+            }
+            else if (isSuper == false && isSysAdmin == true)
+            {
+                if (userInfo.UserId != existingUser.CreateUserId)
+                {
+                    response.SetNoPermission("删除失败，无权限删除用户。");
+                    return Ok(response);
+                }
+            }
+
             existingUser.IsDelete = true;
+            existingUser.UpdateUserId = userInfo.UserId;
+            existingUser.UpdateTime = DateTime.Now;
 
             if (!_userService.Update(existingUser))
             {
@@ -188,6 +229,25 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
         {
             var response = ResponseModelFactory.CreateInstance;
 
+            LoginUserInfo userInfo = GetUserInfo();
+            bool isSuper = _userService.IsSpuerAdministrator(userInfo.UserId);
+            bool isSysAdmin = _userService.IsSystemAdmin(userInfo.UserId);
+
+            //判断是否为超级管理员或者该系统管理员。
+            if (!(isSuper || isSysAdmin))
+            {
+                response.SetNoPermission("修改密码失败，无权限修改密码。");
+                return Ok(response);
+            }
+            else if (isSuper == false && isSysAdmin == true)
+            {
+                if (userInfo.UserId != password.UserId)
+                {
+                    response.SetNoPermission("修改密码失败，无权限修改密码。");
+                    return Ok(response);
+                }
+            }
+
             _userService.UpdatePassword(password, ref response);
 
             return Ok(response);
@@ -202,7 +262,24 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
         public IActionResult ResetUserPassword([FromBody] ResetPasswordViewModel resetPasswordViewModel)
         {
             var response = ResponseModelFactory.CreateInstance;
+            LoginUserInfo userInfo = GetUserInfo();
+            bool isSuper = _userService.IsSpuerAdministrator(userInfo.UserId);
+            bool isSysAdmin = _userService.IsSystemAdmin(userInfo.UserId);
 
+            //判断是否为超级管理员或者该系统管理员。
+            if (!(isSuper || isSysAdmin))
+            {
+                response.SetNoPermission("重置密码失败，无权限重置密码。");
+                return Ok(response);
+            }
+            else if (isSuper == false && isSysAdmin == true)
+            {
+                if (userInfo.UserId != resetPasswordViewModel.Id)
+                {
+                    response.SetNoPermission("重置密码失败，无权限重置密码。");
+                    return Ok(response);
+                }
+            }
             _userService.ResetPassword(resetPasswordViewModel.Id, ref response);
 
             return Ok(response);
@@ -213,19 +290,22 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
         /// </summary>
         /// <returns></returns>
         [HttpGet]
+        //[AllowAnonymous]
         public IActionResult GetRolesWithAppTree()
         {
             var response = ResponseModelFactory.CreateDataInstance;
+            LoginUserInfo userInfo = GetUserInfo();
             try
             {
-                var result = _appService.GetRolesWithAppTreeJson();
+                var result = _appService.GetRolesWithAppTreeJson(userInfo);
 
                 response.SetData(result);
                 return Ok(response);
             }
             catch (Exception ex)
             {
-                response.SetError($"Msg: {ex.Message}.\r\n StackTrace: \r\n{ex.StackTrace}");
+                response.SetError();
+                response.Exception = $"Msg: {ex.Message}.\r\n StackTrace: \r\n{ex.StackTrace}";
                 return Ok(response);
             }
         }

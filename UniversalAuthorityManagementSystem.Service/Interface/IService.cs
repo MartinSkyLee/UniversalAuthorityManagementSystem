@@ -15,5 +15,11 @@ namespace UniversalAuthorityManagement.Service.Interface
         bool SaveChange();
 
         T GetSingle(int id);
+
+        bool IsSpuerAdministrator(int userId);
+
+        bool IsSystemAdmin(int userId, int appId);
+
+        bool IsSystemAdmin(int userId);
     }
 }

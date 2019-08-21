@@ -26,6 +26,11 @@ namespace UniversalAuthorityManagement.Models.Response
         public string Message { get; set; }
 
         /// <summary>
+        /// 抛出异常
+        /// </summary>
+        public string Exception { get; set; }
+
+        /// <summary>
         /// 设置响应状态为成功
         /// </summary>
         /// <param name="message"></param>
@@ -90,6 +95,17 @@ namespace UniversalAuthorityManagement.Models.Response
             Status = ReturnStatus.Failed;
             Message = message;
             Code = 401;
+        }
+
+        /// <summary>
+        /// 设置响应状态为验证失效，禁止访问
+        /// </summary>
+        /// <param name="message"></param>
+        public void SetForbidden(string message = "验证失效，禁止访问")
+        {
+            Status = ReturnStatus.Failed;
+            Message = message;
+            Code = 403;
         }
 
 

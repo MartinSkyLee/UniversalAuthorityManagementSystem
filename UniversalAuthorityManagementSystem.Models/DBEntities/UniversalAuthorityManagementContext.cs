@@ -66,7 +66,7 @@ namespace UniversalAuthorityManagement.Models.DBEntities
 
                 entity.Property(e => e.Icon)
                     .HasColumnName("icon")
-                    .HasColumnType("varchar(20)");
+                    .HasColumnType("varchar(50)");
 
                 entity.Property(e => e.UpdateTime)
                     .HasColumnName("update_time")
@@ -260,6 +260,18 @@ namespace UniversalAuthorityManagement.Models.DBEntities
                     .HasColumnName("app_id")
                     .HasColumnType("int(11)");
 
+                entity.Property(e => e.IsSuperAdministrator)
+                    .HasColumnName("is_super_administrator")
+                    .HasColumnType("bit(1)");
+
+                entity.Property(e => e.IsSystemAdmin)
+                    .HasColumnName("is_system_admin")
+                    .HasColumnType("bit(1)");
+
+                entity.Property(e => e.IsBuiltInRole)
+                    .HasColumnName("is_built_in_role")
+                    .HasColumnType("bit(1)");
+
                 entity.HasOne(d => d.Application)
                     .WithMany(p => p.TbRoles)
                     .HasForeignKey(d => d.AppId)
@@ -303,6 +315,22 @@ namespace UniversalAuthorityManagement.Models.DBEntities
                 entity.Property(e => e.Telephone)
                     .HasColumnName("telephone")
                     .HasColumnType("varchar(50)");
+
+                entity.Property(e => e.CreateTime)
+                   .HasColumnName("create_time")
+                   .HasColumnType("datetime");
+
+                entity.Property(e => e.CreateUserId)
+                    .HasColumnName("create_user_id")
+                    .HasColumnType("int(11)");
+
+                entity.Property(e => e.UpdateTime)
+                    .HasColumnName("update_time")
+                    .HasColumnType("datetime");
+
+                entity.Property(e => e.UpdateUserId)
+                    .HasColumnName("update_user_id")
+                    .HasColumnType("int(11)");
             });
 
             modelBuilder.Entity<TbUserRole>(entity =>

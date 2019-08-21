@@ -36,5 +36,9 @@ namespace UniversalAuthorityManagement.Service.Interface
         /// <param name="appId"></param>
         /// <returns></returns>
         List<MenuResource> GetTreeList(int? userId, int appId);
+
+        List<MenuTreeVM> GetMenuTree(int userId, int appId, bool isSuper);
+
+        List<NavMenuTreeVM> GetNavMenuTree(int userId, int appId, bool isSuper);
     }
 }

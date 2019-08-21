@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using UniversalAuthorityManagement.Models.DBEntities;
 using UniversalAuthorityManagement.Models.ViewModels.MenuVM;
+using UniversalAuthorityManagement.Models.ViewModels.RoleVM;
 using UniversalAuthorityManagement.Service.Interface;
 
 namespace UniversalAuthorityManagement.Service.Service
@@ -18,41 +19,61 @@ namespace UniversalAuthorityManagement.Service.Service
 
         public void AddRolePermission(TbMenu menuModel)
         {
-            var role = _dbContext.TbRoles
+            //本系统的所有角色
+            var roles = _dbContext.TbRoles
                 .Include(r => r.TbUserRole)
                 .Where(r => r.IsDelete == false && r.AppId == menuModel.AppId).ToList();
 
+            //创建者的角色ID
+            var rolesLoginUser = _dbContext.TbSysUser
+                .Include(u => u.TbUserRole)
+                .Where(u => u.IsDelete == false && u.UserId == menuModel.CreateUserId)
+                .Select(u => u.TbUserRole.Select(r => r.Role.RoleId).ToList()).ToList();
+
+            List<int> roleIdsLoginUser = new List<int>();
+
+            foreach (var roleIds in rolesLoginUser)
+            {
+                foreach (var roleId in roleIds)
+                {
+                    roleIdsLoginUser.Add(roleId);
+                }
+            }
+
             List<TbRolePermission> rolePermissions = new List<TbRolePermission>();
 
-            role.ForEach(r =>
+            //为本系统的所有角色添加菜单权限，本用户拥有的角色默认开启，否则不开启
+            foreach (var r in roles)
             {
-                //本用户创建的菜单默认开启
-                if (r.TbUserRole.Any(u => u.UserId == menuModel.CreateUserId))
+                TbRolePermission rolePermission = new TbRolePermission
                 {
-                    rolePermissions.Add(new TbRolePermission
-                    {
-                        RoleId = r.RoleId,
-                        CreateTime = DateTime.Now,
-                        UpdateTime = DateTime.Now,
-                        CreateUserId = menuModel.CreateUserId,
-                        UpdateUserId = menuModel.UpdateUserId,
-                        UseYn = true,
-                        IsDelete = false
-                    });
-                }
-                else
+                    RoleId = r.RoleId,
+                    CreateTime = DateTime.Now,
+                    UpdateTime = DateTime.Now,
+                    CreateUserId = menuModel.CreateUserId,
+                    UpdateUserId = menuModel.UpdateUserId,
+                    UseYn = false,
+                    IsDelete = false
+                };
+
+                if (roleIdsLoginUser.Contains(r.RoleId))
                 {
-                    rolePermissions.Add(new TbRolePermission
-                    {
-                        RoleId = r.RoleId,
-                        CreateTime = DateTime.Now,
-                        UpdateTime = DateTime.Now,
-                        CreateUserId = menuModel.CreateUserId,
-                        UpdateUserId = menuModel.UpdateUserId,
-                        UseYn = false,
-                        IsDelete = false
-                    });
+                    rolePermission.UseYn = true;
                 }
+
+                rolePermissions.Add(rolePermission);
+            }
+
+            //超级管理员默认开启菜单
+            rolePermissions.Add(new TbRolePermission
+            {
+                RoleId = 1, //超级管理员ID
+                CreateTime = DateTime.Now,
+                UpdateTime = DateTime.Now,
+                CreateUserId = menuModel.CreateUserId,
+                UpdateUserId = menuModel.UpdateUserId,
+                UseYn = true,
+                IsDelete = false
             });
 
             menuModel.TbPermission.Add(new TbPermission
@@ -242,5 +263,216 @@ namespace UniversalAuthorityManagement.Service.Service
             return result;
         }
 
+        public List<MenuTreeVM> GetMenuTree(int userId, int appId, bool isSuper)
+        {
+            List<MenuTreeVM> result = new List<MenuTreeVM>();
+
+            string strSql = "SELECT DISTINCT M.* FROM tb_role_permission AS RP " +
+                "LEFT JOIN tb_permission AS P ON P.permission_id = RP.permission_id " +
+                "INNER JOIN tb_menu AS M ON M.menu_id = P.menu_id " +
+                "WHERE P.is_delete = false AND M.app_id = {0} AND M.is_delete = false AND RP.is_delete = false AND RP.use_yn = true " +
+                "AND EXISTS(SELECT 1 FROM tb_user_role AS UR WHERE UR.user_id = {1} AND UR.role_id = RP.role_id)";
+
+
+            if (isSuper == true)
+            {
+                //如果是超级管理员
+                strSql = @"SELECT * FROM tb_menu AS M WHERE M.is_delete = false AND M.app_id = {0}";
+            }
+
+            IQueryable<TbMenu> allMenus = _dbContext.TbMenu.FromSql(strSql, appId, userId);
+
+            allMenus = allMenus.Include(m => m.TbPermission).OrderBy(x => x.Level).ThenBy(x => x.MenuOrder);
+
+            result = MenuItemHelper.LoadMenuManageTree(allMenus.ToList(), 0);
+
+            return result;
+        }
+
+        public List<NavMenuTreeVM> GetNavMenuTree(int userId, int appId, bool isSuper)
+        {
+            List<NavMenuTreeVM> result = new List<NavMenuTreeVM>();
+            string strSql = "SELECT DISTINCT M.* FROM tb_role_permission AS RP " +
+                "LEFT JOIN tb_permission AS P ON P.permission_id = RP.permission_id " +
+                "INNER JOIN tb_menu AS M ON M.menu_id = P.menu_id " +
+                "WHERE P.is_delete = false AND M.app_id = {0} AND M.is_delete = false AND RP.is_delete = false AND RP.use_yn = true " +
+                "AND EXISTS(SELECT 1 FROM tb_user_role AS UR WHERE UR.user_id = {1} AND UR.role_id = RP.role_id)";
+
+
+            if (isSuper == true)
+            {
+                //如果是超级管理员
+                strSql = @"SELECT * FROM tb_menu AS M WHERE M.is_delete = false AND M.app_id = {0}";
+            }
+
+            IQueryable<TbMenu> allMenus = _dbContext.TbMenu.FromSql(strSql, appId, userId);
+
+            allMenus = allMenus.Include(m => m.TbPermission).OrderBy(x => x.Level).ThenBy(x => x.MenuOrder);
+
+            result = MenuItemHelper.LoadMenuTree(allMenus.ToList(), 0);
+
+            return result;
+        }
+    }
+
+    public static class MenuItemHelper
+    {
+        public static List<NavMenuTreeVM> BuildTree(this List<NavMenuTreeVM> menus, int selectedId = 0)
+        {
+            var lookup = menus.ToLookup(x => x.ParentMenuId);
+
+            List<NavMenuTreeVM> Build(int pid)
+            {
+                return lookup[pid].Select(x => new NavMenuTreeVM
+                {
+                    MenuId = x.MenuId,
+                    PermissionId = x.PermissionId,
+                    PermissionName = x.PermissionName,
+                    MenuName = x.MenuName,
+                    Url = x.Url,
+                    Level = x.Level,
+                    ParentMenuId = x.ParentMenuId,
+                    Description = x.Description,
+                    Icon = x.Icon,
+                    MenuOrder = x.MenuOrder,
+                    Children = Build(x.MenuId)
+                })
+                .ToList();
+            }
+
+            var result = Build(selectedId);
+            return result;
+        }
+
+        public static List<NavMenuTreeVM> LoadMenuTree(List<TbMenu> menus, int selectedId = 0)
+        {
+            var menuItems = menus.Select(x => new NavMenuTreeVM
+            {
+                MenuId = x.MenuId,
+                PermissionId = x.TbPermission.FirstOrDefault() != null ? x.TbPermission.FirstOrDefault().PermissionId : 0,
+                PermissionName = x.TbPermission.FirstOrDefault() != null ? x.TbPermission.FirstOrDefault().PermissionName : "",
+                MenuName = x.MenuName,
+                Url = x.Url,
+                Level = x.Level ?? 0,
+                ParentMenuId = x.ParentMenuId ?? 0,
+                Description = x.Description,
+                Icon = x.Icon,
+                MenuOrder = x.MenuOrder
+            })
+            .ToList();
+            var tree = menuItems.BuildTree(selectedId);
+
+            return tree;
+        }
+
+        public static List<MenuTreeVM> BuildTree(this List<MenuTreeVM> menus, int selectedId = 0)
+        {
+            var lookup = menus.ToLookup(x => x.ParentMenuId);
+
+            List<MenuTreeVM> Build(int pid)
+            {
+                return lookup[pid].Select(x => new MenuTreeVM
+                {
+                    MenuId = x.MenuId,
+                    PermissionId = x.PermissionId,
+                    PermissionName = x.PermissionName,
+                    MenuName = x.MenuName,
+                    Url = x.Url,
+                    Level = x.Level,
+                    ParentMenuId = x.ParentMenuId,
+                    Description = x.Description,
+                    Icon = x.Icon,
+                    MenuOrder = x.MenuOrder,
+                    Children = Build(x.MenuId).Count() <= 0 ? x.Children : Build(x.MenuId),
+                })
+                .ToList();
+            }
+
+            var result = Build(selectedId);
+            return result;
+        }
+
+        public static List<MenuTreeVM> LoadMenuManageTree(List<TbMenu> menus, int selectedId = 0)
+        {
+            var menuItems = menus.Select(x => new MenuTreeVM
+            {
+                MenuId = x.MenuId,
+                PermissionId = x.TbPermission.FirstOrDefault(p => p.PermissionType == "menu" && p.IsDelete == false) != null ? x.TbPermission.FirstOrDefault(p => p.PermissionType == "menu" && p.IsDelete == false).PermissionId : 0,
+                PermissionName = x.TbPermission.FirstOrDefault(p => p.PermissionType == "menu" && p.IsDelete == false) != null ? x.TbPermission.FirstOrDefault(p => p.PermissionType == "menu" && p.IsDelete == false).PermissionName : "",
+                MenuName = x.MenuName,
+                Url = x.Url,
+                Level = x.Level ?? 0,
+                ParentMenuId = x.ParentMenuId ?? 0,
+                Description = x.Description,
+                Icon = x.Icon,
+                MenuOrder = x.MenuOrder,
+                Children = x.TbPermission.Where(p => p.IsDelete == false).Select(p => new ChildrenButtons
+                {
+                    PermissionId = p.PermissionId,
+                    PermissionName = p.PermissionName,
+                    MenuId = p.MenuId ?? 0,
+                    Description = p.Description,
+                    Url = p.Url
+                }).ToList()
+            })
+            .ToList();
+            var tree = menuItems.BuildTree(selectedId);
+
+            return tree;
+        }
+
+        public static List<RoleAuthorizationTreeVM> BuildTree(this List<RoleAuthorizationTreeVM> menus, int selectedId = 0)
+        {
+            var lookup = menus.ToLookup(x => x.ParentMenuId);
+
+            List<RoleAuthorizationTreeVM> Build(int pid)
+            {
+                return lookup[pid].Select(x => new RoleAuthorizationTreeVM
+                {
+                    MenuId = x.MenuId,
+                    MenuName = x.MenuName,
+                    Level = x.Level,
+                    PermissionId = x.PermissionId,
+                    PermissionName = Build(x.MenuId).Count() <= 0 ? "" : x.PermissionName,
+                    UseYn = x.UseYn,
+                    ParentMenuId = x.ParentMenuId,
+                    Children = Build(x.MenuId),
+                    Permission = Build(x.MenuId).Count() <= 0 ? x.Permission : null
+                })
+                .ToList();
+            }
+
+            var result = Build(selectedId);
+            return result;
+        }
+
+        public static List<RoleAuthorizationTreeVM> LoadRoleAuthorizationTree(List<TbMenu> menus, int selectedId = 0, int roleId = 0)
+        {
+            var menuItems = menus.Select(x => new RoleAuthorizationTreeVM
+            {
+                MenuId = x.MenuId,
+                MenuName = x.MenuName,
+                Level = x.Level ?? 0,
+                PermissionId = x.TbPermission.FirstOrDefault(p => p.PermissionType == "menu" && p.IsDelete == false) != null ? x.TbPermission.FirstOrDefault(p => p.PermissionType == "menu" && p.IsDelete == false).PermissionId : 0,
+                PermissionName = x.TbPermission.FirstOrDefault(p => p.PermissionType == "menu" && p.IsDelete == false) != null ? x.TbPermission.FirstOrDefault(p => p.PermissionType == "menu" && p.IsDelete == false).PermissionName : "",
+                UseYn = x.TbPermission.FirstOrDefault(p => p.PermissionType == "menu" && p.IsDelete == false) != null ?
+                    x.TbPermission.FirstOrDefault(p => p.PermissionType == "menu" && p.IsDelete == false).TbRolePermission
+                    .Where(p => p.RoleId == roleId)
+                    .Select(p => Convert.ToBoolean(p.UseYn))
+                    .SingleOrDefault() : false,
+                ParentMenuId = x.ParentMenuId ?? 0,
+                Permission = x.TbPermission.Where(p => p.IsDelete == false).Select(p => new Buttons
+                {
+                    PermissionId = p.PermissionId,
+                    PermissionName = p.PermissionName,
+                    UseYn = p.TbRolePermission.SingleOrDefault(rp => rp.RoleId == roleId) != null ?
+                        p.TbRolePermission.SingleOrDefault(rp => rp.RoleId == roleId).UseYn ?? false : false
+                }).ToList()
+            })
+            .ToList();
+            var tree = menuItems.BuildTree(selectedId);
+
+            return tree;
+        }
     }
 }

@@ -33,14 +33,19 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
             var response = ResponseModelFactory.CreateResultInstance;
             try
             {
-                PageResult result = _roleService.GetResultList(queryParameters);
+                LoginUserInfo userInfo = GetUserInfo();
+                bool isSuper = _roleService.IsSpuerAdministrator(userInfo.UserId);
+                bool isSysAdmin = _roleService.IsSystemAdmin(userInfo.UserId, queryParameters.AppId);
+
+                PageResult result = _roleService.GetResultList(queryParameters, isSuper, isSysAdmin);
 
                 response.SetData(result);
                 return Ok(response);
             }
             catch (Exception ex)
             {
-                response.SetError($"Msg: {ex.Message}.\r\n StackTrace: \r\n{ex.StackTrace}");
+                response.SetError();
+                response.Exception = $"Msg: {ex.Message}.\r\n StackTrace: \r\n{ex.StackTrace}";
                 return Ok(response);
             }
         }
@@ -54,6 +59,17 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
         public IActionResult CreateRole([FromBody] RoleCreateViewModel roleCreate)
         {
             var response = ResponseModelFactory.CreateInstance;
+            LoginUserInfo userInfo = GetUserInfo();
+            bool isSuper = _roleService.IsSpuerAdministrator(userInfo.UserId);
+            bool isSysAdmin = _roleService.IsSystemAdmin(userInfo.UserId, roleCreate.AppId);
+
+            //判断是否为超级管理员或者该系统管理员。
+            if (!(isSuper || isSysAdmin))
+            {
+                response.SetNoPermission("新增失败，用户无权限新增角色。");
+                return Ok(response);
+            }
+
             if (roleCreate == null)
             {
                 response.SetBadRequest();
@@ -76,9 +92,8 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
 
             roleModel.CreateTime = DateTime.Now;
             roleModel.UpdateTime = DateTime.Now;
-            int? LoginUserId = GetLoginUserId();
-            roleModel.CreateUserId = LoginUserId;
-            roleModel.UpdateUserId = LoginUserId;
+            roleModel.CreateUserId = userInfo.UserId;
+            roleModel.UpdateUserId = userInfo.UserId;
             roleModel.IsDelete = false;
             roleModel.UseYn = true;
 
@@ -123,11 +138,21 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
                 return Ok(response);
             }
 
+            LoginUserInfo userInfo = GetUserInfo();
+            bool isSuper = _roleService.IsSpuerAdministrator(userInfo.UserId);
+            bool isSysAdmin = _roleService.IsSystemAdmin(userInfo.UserId, existingRole.AppId ?? 0);
+
+            //判断是否为超级管理员或者该系统管理员。
+            if (!(isSuper || isSysAdmin))
+            {
+                response.SetNoPermission("编辑失败，用户无权限编辑角色。");
+                return Ok(response);
+            }
+
             _mapper.Map(roleEdit, existingRole);
 
             existingRole.UpdateTime = DateTime.Now;
-            int? LoginUserId = GetLoginUserId();
-            existingRole.UpdateUserId = LoginUserId;
+            existingRole.UpdateUserId = userInfo.UserId;
 
             if (!_roleService.Update(existingRole))
             {
@@ -163,10 +188,20 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
                 return Ok(response);
             }
 
+            LoginUserInfo userInfo = GetUserInfo();
+            bool isSuper = _roleService.IsSpuerAdministrator(userInfo.UserId);
+            bool isSysAdmin = _roleService.IsSystemAdmin(userInfo.UserId, existingRole.AppId ?? 0);
+
+            //判断是否为超级管理员或者该系统管理员。
+            if (!(isSuper || isSysAdmin))
+            {
+                response.SetNoPermission("删除失败，用户无权限删除角色。");
+                return Ok(response);
+            }
+
             existingRole.IsDelete = true;
             existingRole.UpdateTime = DateTime.Now;
-            int? LoginUserId = GetLoginUserId();
-            existingRole.UpdateUserId = LoginUserId;
+            existingRole.UpdateUserId = userInfo.UserId;
 
             if (existingRole.TbRolePermission != null)
             {
@@ -174,7 +209,7 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
                 {
                     item.IsDelete = true;
                     item.UpdateTime = DateTime.Now;
-                    item.UpdateUserId = LoginUserId;
+                    item.UpdateUserId = userInfo.UserId;
                 }
             }
 

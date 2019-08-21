@@ -20,40 +20,64 @@ namespace UniversalAuthorityManagement.Service.Service
         {
             var menu = _dbContext.TbMenu.Where(m => m.IsDelete == false && m.MenuId == permissionModel.MenuId)
                 .SingleOrDefault();
-
-            var role = _dbContext.TbRoles
+            //本系统的所有角色
+            var roles = _dbContext.TbRoles
                 .Include(r => r.TbUserRole)
                 .Where(r => r.IsDelete == false && r.AppId == menu.AppId).ToList();
 
-            role.ForEach(r =>
+            //创建者的角色ID
+            var rolesLoginUser = _dbContext.TbSysUser
+                .Include(u => u.TbUserRole)
+                .Where(u => u.IsDelete == false && u.UserId == permissionModel.CreateUserId)
+                .Select(u => u.TbUserRole.Select(r => r.Role.RoleId).ToList()).ToList();
+
+            List<int> roleIdsLoginUser = new List<int>();
+
+            foreach (var roleIds in rolesLoginUser)
             {
-                if (r.TbUserRole.Any(u => u.UserId == permissionModel.CreateUserId))
+                foreach (var roleId in roleIds)
                 {
-                    permissionModel.TbRolePermission.Add(new TbRolePermission
-                    {
-                        RoleId = r.RoleId,
-                        CreateTime = DateTime.Now,
-                        UpdateTime = DateTime.Now,
-                        CreateUserId = permissionModel.CreateUserId,
-                        UpdateUserId = permissionModel.UpdateUserId,
-                        UseYn = true,
-                        IsDelete = false
-                    });
+                    roleIdsLoginUser.Add(roleId);
                 }
-                else
+            }
+
+            List<TbRolePermission> rolePermissions = new List<TbRolePermission>();
+
+            //为本系统的所有角色添加菜单权限，本用户拥有的角色默认开启，否则不开启
+            foreach (var r in roles)
+            {
+                TbRolePermission rolePermission = new TbRolePermission
                 {
-                    permissionModel.TbRolePermission.Add(new TbRolePermission
-                    {
-                        RoleId = r.RoleId,
-                        CreateTime = DateTime.Now,
-                        UpdateTime = DateTime.Now,
-                        CreateUserId = permissionModel.CreateUserId,
-                        UpdateUserId = permissionModel.UpdateUserId,
-                        UseYn = false,
-                        IsDelete = false
-                    });
+                    RoleId = r.RoleId,
+                    CreateTime = DateTime.Now,
+                    UpdateTime = DateTime.Now,
+                    CreateUserId = permissionModel.CreateUserId,
+                    UpdateUserId = permissionModel.UpdateUserId,
+                    UseYn = false,
+                    IsDelete = false
+                };
+
+                if (roleIdsLoginUser.Contains(r.RoleId))
+                {
+                    rolePermission.UseYn = true;
                 }
+
+                rolePermissions.Add(rolePermission);
+            }
+
+            //超级管理员默认开启菜单
+            rolePermissions.Add(new TbRolePermission
+            {
+                RoleId = 1, //超级管理员ID
+                CreateTime = DateTime.Now,
+                UpdateTime = DateTime.Now,
+                CreateUserId = permissionModel.CreateUserId,
+                UpdateUserId = permissionModel.UpdateUserId,
+                UseYn = true,
+                IsDelete = false
             });
+
+            permissionModel.TbRolePermission = rolePermissions;
         }
 
         public TbPermission GetSinglePermission(int id)

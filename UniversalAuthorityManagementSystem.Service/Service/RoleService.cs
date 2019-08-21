@@ -20,12 +20,20 @@ namespace UniversalAuthorityManagement.Service.Service
 
         }
 
-        public PageResult GetResultList(QueryRoleParameters queryParameters)
+        public PageResult GetResultList(QueryRoleParameters queryParameters, bool isSuper, bool isSysAdmin)
         {
             PageResult result = new PageResult();
 
             IQueryable<TbRoles> data = _dbContext.TbRoles.Where(r => r.IsDelete == false && r.AppId == queryParameters.AppId)
                 .OrderBy(queryParameters.OrderBy, queryParameters.IsDescending());
+
+            //判断是否为超级管理员或者该系统管理员。
+            if (!(isSuper || isSysAdmin))
+            {
+                data = data.Where(d => !(d.IsSuperAdministrator == true || d.IsSystemAdmin == true));
+            }
+
+            IQueryable<TbSysUser> sysUsers = _dbContext.TbSysUser.Where(r => r.IsDelete == false);
 
             if (!string.IsNullOrEmpty(queryParameters.Name))
             {
@@ -44,8 +52,8 @@ namespace UniversalAuthorityManagement.Service.Service
                     CreateUserId = d.CreateUserId,
                     CreateTime = d.CreateTime,
                     Description = d.Description,
-                    CreateUserName = _dbContext.TbSysUser.SingleOrDefault(u => u.UserId == d.CreateUserId) != null ?
-                                            _dbContext.TbSysUser.SingleOrDefault(u => u.UserId == d.CreateUserId).SysUserName : string.Empty,
+                    CreateUserName = sysUsers.SingleOrDefault(u => u.UserId == d.CreateUserId) != null ?
+                                            sysUsers.SingleOrDefault(u => u.UserId == d.CreateUserId).SysUserName : string.Empty,
                     UseYn = d.UseYn,
                     StrUseYn = Convert.ToBoolean(d.UseYn) ? "是" : "否"
                 })
@@ -56,7 +64,9 @@ namespace UniversalAuthorityManagement.Service.Service
 
         public bool IsExistingRole(RoleCreateViewModel roleCreate)
         {
-            var result = _dbContext.TbRoles.Where(r => r.RoleName == roleCreate.RoleName && r.AppId == roleCreate.AppId).ToList();
+            var result = _dbContext.TbRoles
+                .Where(r => r.RoleName == roleCreate.RoleName && r.AppId == roleCreate.AppId && r.IsDelete == false)
+                .ToList();
 
             if (result == null || result.Count() <= 0)
             {
@@ -80,13 +90,19 @@ namespace UniversalAuthorityManagement.Service.Service
 
         public void AddRolePermission(TbRoles roleModel)
         {
-            var permissions = _dbContext.TbPermission.Where(p => p.IsDelete == false).ToList();
+            var permissions = _dbContext.TbPermission
+                .Include(p => p.Menu)
+                .Where(p => p.Menu.AppId == roleModel.AppId && p.IsDelete == false).ToList();
 
             permissions.ForEach(p =>
             {
                 roleModel.TbRolePermission.Add(new TbRolePermission
                 {
                     PermissionId = p.PermissionId,
+                    CreateUserId = roleModel.CreateUserId,
+                    CreateTime = roleModel.CreateTime,
+                    UpdateUserId = roleModel.UpdateUserId,
+                    UpdateTime = roleModel.UpdateTime,
                     UseYn = false,
                     IsDelete = false
                 });
@@ -158,18 +174,62 @@ namespace UniversalAuthorityManagement.Service.Service
             return result;
         }
 
+        public List<RoleAuthorizationTreeVM> GetPermissionByRoleId(int roleId, LoginUserInfo userInfo)
+        {
+            List<RoleAuthorizationTreeVM> result = new List<RoleAuthorizationTreeVM>();
 
-        public void UpdateRolePermission(RolePermissionViewModel rolePermission, ref ResponseModel response)
+            string strSql = "SELECT DISTINCT M.* FROM tb_role_permission AS RP " +
+                "LEFT JOIN tb_permission AS P ON P.permission_id = RP.permission_id " +
+                "INNER JOIN tb_menu AS M ON M.menu_id = P.menu_id " +
+                "WHERE P.is_delete = false AND M.app_id = (SELECT app_id FROM tb_roles WHERE role_id = {0}) AND M.is_delete = false AND RP.is_delete = false " +
+                "AND EXISTS(SELECT 1 FROM tb_user_role AS UR WHERE UR.user_id = {1} AND UR.role_id = RP.role_id)";
+
+            if (userInfo.IsSuper == true)
+            {
+                //如果是超级管理员
+                strSql = "SELECT DISTINCT M.* FROM tb_role_permission AS RP " +
+                "LEFT JOIN tb_permission AS P ON P.permission_id = RP.permission_id " +
+                "INNER JOIN tb_menu AS M ON M.menu_id = P.menu_id " +
+                "WHERE P.is_delete = false AND M.app_id = (SELECT app_id FROM tb_roles WHERE role_id = {0}) AND M.is_delete = false AND RP.is_delete = false ";
+            }
+
+            IQueryable<TbMenu> allMenus = _dbContext.TbMenu.FromSql(strSql, roleId, userInfo.UserId);
+
+            allMenus = allMenus.Include(m => m.TbPermission).ThenInclude(p => p.TbRolePermission).OrderBy(x => x.Level).ThenBy(x => x.MenuOrder);
+
+            result = MenuItemHelper.LoadRoleAuthorizationTree(allMenus.ToList(), 0, roleId);
+
+            return result;
+        }
+
+        public void UpdateRolePermission(RolePermissionViewModel rolePermission, LoginUserInfo userInfo, ref ResponseModel response)
         {
             var existingRole = _dbContext.TbRoles
                 .Include(r => r.TbRolePermission)
                 .AsNoTracking()
-                .SingleOrDefaultAsync(r => r.RoleId == rolePermission.RoleId && r.IsDelete == false);
+                .SingleOrDefault(r => r.RoleId == rolePermission.RoleId && r.IsDelete == false);
 
             if (existingRole == null)
             {
                 response.SetNotFound("角色不存在");
                 return;
+            }
+
+            bool isSysAdmin = IsSystemAdmin(userInfo.UserId);
+
+            //判断是否为该系统管理员。
+            if (userInfo.IsSuper == false && isSysAdmin == true)
+            {
+                var apps = _dbContext.TbRoles.Include(r => r.Application)
+                    .Where(r => userInfo.RoleIds.Contains(r.RoleId) && r.IsSystemAdmin == true)
+                    .Select(r => r.Application)
+                    .ToList();
+
+                if (!apps.Exists(a => a.AppId == existingRole.AppId))
+                {
+                    response.SetNoPermission("保存失败，用户无权限保存。");
+                    return;
+                }
             }
 
             try
@@ -184,7 +244,8 @@ namespace UniversalAuthorityManagement.Service.Service
             }
             catch (Exception ex)
             {
-                response.SetError($"Msg: {ex.Message}.\r\n StackTrace: \r\n{ex.StackTrace}");
+                response.SetError();
+                response.Exception = $"Msg: {ex.Message}.\r\n StackTrace: \r\n{ex.StackTrace}";
                 return;
             }
 

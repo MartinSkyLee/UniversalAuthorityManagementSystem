@@ -17,6 +17,10 @@ namespace UniversalAuthorityManagement.Models.DBEntities
         public string Email { get; set; }
         public string Position { get; set; }
         public string Telephone { get; set; }
+        public int? CreateUserId { get; set; }
+        public DateTime? CreateTime { get; set; }
+        public int? UpdateUserId { get; set; }
+        public DateTime? UpdateTime { get; set; }
         public bool? IsDelete { get; set; }
 
         public ICollection<TbUserRole> TbUserRole { get; set; }

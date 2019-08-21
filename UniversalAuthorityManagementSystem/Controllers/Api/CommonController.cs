@@ -7,6 +7,8 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using UniversalAuthorityManagement.Models.Response;
+using UniversalAuthorityManagement.Models.ViewModels;
+using UniversalAuthorityManagement.Models.ViewModels.MenuVM;
 using UniversalAuthorityManagement.Service.Interface;
 
 namespace UniversalAuthorityManagementSystem.Controllers.Api
@@ -38,15 +40,10 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
             var response = ResponseModelFactory.CreateDataInstance;
             try
             {
-                int? userId = GetLoginUserId();
+                LoginUserInfo userInfo = GetUserInfo();
+                bool isSuper = _menuService.IsSpuerAdministrator(userInfo.UserId);
 
-                if (userId == null)
-                {
-                    response.SetNoPermission();
-                    return Ok(response);
-                }
-
-                var result = _menuService.GetNavTreeJson(userId, appId);
+                List<NavMenuTreeVM> result = _menuService.GetNavMenuTree(userInfo.UserId, appId, isSuper);
                 //_userService.GetAllPermissionUrls(userId);
 
                 response.SetData(result);
@@ -54,7 +51,8 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
             }
             catch (Exception ex)
             {
-                response.SetError($"Msg: {ex.Message}.\r\n StackTrace: \r\n{ex.StackTrace}");
+                response.SetError();
+                response.Exception = $"Msg: {ex.Message}.\r\n StackTrace: \r\n{ex.StackTrace}";
                 return Ok(response);
             }
         }
@@ -88,7 +86,8 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
             }
             catch (Exception ex)
             {
-                response.SetError($"Msg: {ex.Message}.\r\n StackTrace: \r\n{ex.StackTrace}");
+                response.SetError();
+                response.Exception = $"Msg: {ex.Message}.\r\n StackTrace: \r\n{ex.StackTrace}";
                 return Ok(response);
             }
         }
@@ -101,23 +100,16 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
         [AllowAnonymous]
         public IActionResult GetLoginUserInfo()
         {
-            string userName = "";
-            List<int> roleIds = new List<int>();
+            LoginUserInfo userInfo = new LoginUserInfo();
 
             if (HttpContext.User.Claims.Count() != 0)
             {
-                userName = HttpContext.User.FindFirst(JwtClaimTypes.Name).Value;
-                string strRole = HttpContext.User.FindFirst(JwtClaimTypes.Role).Value;
-                roleIds = DHSurvey.Common.Helper.JsonConvertor.Deserialize<List<int>>(strRole);
+                userInfo = GetUserInfo();
             }
 
             return Ok(new
             {
-                LoginUserInfo = new
-                {
-                    UserName = userName,
-                    RoleIds = roleIds
-                }
+                LoginUserInfo = userInfo
             });
         }
     }

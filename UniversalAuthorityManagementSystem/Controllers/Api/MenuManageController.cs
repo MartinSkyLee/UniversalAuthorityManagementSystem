@@ -1,12 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using AutoMapper;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using UniversalAuthorityManagement.Models.DBEntities;
 using UniversalAuthorityManagement.Models.Response;
+using UniversalAuthorityManagement.Models.ViewModels;
 using UniversalAuthorityManagement.Models.ViewModels.MenuVM;
 using UniversalAuthorityManagement.Models.ViewModels.PermissionVM;
 using UniversalAuthorityManagement.Service.Interface;
@@ -39,6 +37,17 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
         public IActionResult CreateMenu([FromBody] MenuCreateViewModel menuCreate)
         {
             var response = ResponseModelFactory.CreateInstance;
+            LoginUserInfo userInfo = GetUserInfo();
+            bool isSuper = _menuService.IsSpuerAdministrator(userInfo.UserId);
+            bool isSysAdmin = _menuService.IsSystemAdmin(userInfo.UserId, menuCreate.AppId);
+
+            //判断是否为超级管理员或者该系统管理员。
+            if (!(isSuper || isSysAdmin))
+            {
+                response.SetNoPermission("新增失败，用户无权限新增菜单。");
+                return Ok(response);
+            }
+
             if (menuCreate == null)
             {
                 response.SetBadRequest();
@@ -55,10 +64,8 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
 
             menuModel.CreateTime = DateTime.Now;
             menuModel.UpdateTime = DateTime.Now;
-
-            int? LoginUserId = GetLoginUserId();
-            menuModel.CreateUserId = LoginUserId;
-            menuModel.UpdateUserId = LoginUserId;
+            menuModel.CreateUserId = userInfo.UserId;
+            menuModel.UpdateUserId = userInfo.UserId;
             menuModel.IsDelete = false;
 
             _menuService.AddRolePermission(menuModel);
@@ -83,6 +90,7 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
         public IActionResult EditMenu([FromBody] MenuEditViewModel menuEdit)
         {
             var response = ResponseModelFactory.CreateInstance;
+
             if (menuEdit == null)
             {
                 response.SetBadRequest();
@@ -95,18 +103,27 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
                 return Ok(response);
             }
 
-            var existingMenu = _menuService.GetSingle(menuEdit.MenuId);
-
+            TbMenu existingMenu = _menuService.GetSingle(menuEdit.MenuId);
             if (existingMenu == null)
             {
                 response.SetNotFound("菜单不存在");
                 return Ok(response);
             }
 
-            _mapper.Map(menuEdit, existingMenu);
+            LoginUserInfo userInfo = GetUserInfo();
+            bool isSuper = _menuService.IsSpuerAdministrator(userInfo.UserId);
+            bool isSysAdmin = _menuService.IsSystemAdmin(userInfo.UserId, existingMenu.AppId ?? 0);
 
-            int? LoginUserId = GetLoginUserId();
-            existingMenu.UpdateUserId = LoginUserId;
+            //判断是否为超级管理员或者该系统管理员。
+            if (!(isSuper || isSysAdmin))
+            {
+                response.SetNoPermission("编辑失败，用户无权限编辑菜单。");
+                return Ok(response);
+            }
+
+            _mapper.Map(menuEdit, existingMenu);
+            
+            existingMenu.UpdateUserId = userInfo.UserId;
             existingMenu.UpdateTime = DateTime.Now;
 
             if (!_menuService.Update(existingMenu))
@@ -128,6 +145,7 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
         public IActionResult DeleteMenu([FromQuery] int id)
         {
             var response = ResponseModelFactory.CreateInstance;
+
             if (!ModelState.IsValid)
             {
                 response.SetBadRequest();
@@ -142,8 +160,18 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
                 return Ok(response);
             }
 
-            int? LoginUserId = GetLoginUserId();
-            existingMenu.UpdateUserId = LoginUserId;
+            LoginUserInfo userInfo = GetUserInfo();
+            bool isSuper = _menuService.IsSpuerAdministrator(userInfo.UserId);
+            bool isSysAdmin = _menuService.IsSystemAdmin(userInfo.UserId, existingMenu.AppId ?? 0);
+
+            //判断是否为超级管理员或者该系统管理员。
+            if (!(isSuper || isSysAdmin))
+            {
+                response.SetNoPermission("删除失败，用户无权限删除菜单。");
+                return Ok(response);
+            }
+
+            existingMenu.UpdateUserId = userInfo.UserId;
             existingMenu.UpdateTime = DateTime.Now;
             existingMenu.IsDelete = true;
 
@@ -189,6 +217,25 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
         public IActionResult CreatePermission([FromBody] PermissionCreateViewModel permissionCreate)
         {
             var response = ResponseModelFactory.CreateInstance;
+
+            TbMenu existingMenu = _menuService.GetSingle(permissionCreate.MenuId ?? 0);
+            if (existingMenu == null)
+            {
+                response.SetBadRequest("请选择所属菜单");
+                return Ok(response);
+            }
+
+            LoginUserInfo userInfo = GetUserInfo();
+            bool isSuper = _menuService.IsSpuerAdministrator(userInfo.UserId);
+            bool isSysAdmin = _menuService.IsSystemAdmin(userInfo.UserId, existingMenu.AppId ?? 0);
+
+            //判断是否为超级管理员或者该系统管理员。
+            if (!(isSuper || isSysAdmin))
+            {
+                response.SetNoPermission("新增失败，用户无权限新增按钮。");
+                return Ok(response);
+            }
+
             if (permissionCreate == null)
             {
                 response.SetBadRequest();
@@ -203,9 +250,8 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
 
             var permissionModel = _mapper.Map<TbPermission>(permissionCreate);
 
-            int? LoginUserId = GetLoginUserId();
-            permissionModel.CreateUserId = LoginUserId;
-            permissionModel.UpdateUserId = LoginUserId;
+            permissionModel.CreateUserId = userInfo.UserId;
+            permissionModel.UpdateUserId = userInfo.UserId;
             permissionModel.CreateTime = DateTime.Now;
             permissionModel.UpdateTime = DateTime.Now;
             permissionModel.IsDelete = false;
@@ -233,6 +279,24 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
         public IActionResult EditPermission([FromBody] PermissionEditViewModel permissionEdit)
         {
             var response = ResponseModelFactory.CreateInstance;
+            TbMenu existingMenu = _menuService.GetSingle(permissionEdit.MenuId ?? 0);
+            if (existingMenu == null)
+            {
+                response.SetBadRequest("请选择所属菜单");
+                return Ok(response);
+            }
+
+            LoginUserInfo userInfo = GetUserInfo();
+            bool isSuper = _menuService.IsSpuerAdministrator(userInfo.UserId);
+            bool isSysAdmin = _menuService.IsSystemAdmin(userInfo.UserId, existingMenu.AppId ?? 0);
+
+            //判断是否为超级管理员或者该系统管理员。
+            if (!(isSuper || isSysAdmin))
+            {
+                response.SetNoPermission("编辑失败，用户无权限编辑按钮。");
+                return Ok(response);
+            }
+
             if (permissionEdit == null)
             {
                 response.SetBadRequest();
@@ -255,8 +319,7 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
 
             _mapper.Map(permissionEdit, existingPermission);
 
-            int? LoginUserId = GetLoginUserId();
-            existingPermission.UpdateUserId = LoginUserId;
+            existingPermission.UpdateUserId = userInfo.UserId;
             existingPermission.UpdateTime = DateTime.Now;
 
             if (!_permissionService.Update(existingPermission))
@@ -292,8 +355,25 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
                 return Ok(response);
             }
 
-            int? LoginUserId = GetLoginUserId();
-            existingPermission.UpdateUserId = LoginUserId;
+            TbMenu existingMenu = _menuService.GetSingle(existingPermission.MenuId ?? 0);
+            if (existingMenu == null)
+            {
+                response.SetBadRequest("请选择所属菜单");
+                return Ok(response);
+            }
+
+            LoginUserInfo userInfo = GetUserInfo();
+            bool isSuper = _menuService.IsSpuerAdministrator(userInfo.UserId);
+            bool isSysAdmin = _menuService.IsSystemAdmin(userInfo.UserId, existingMenu.AppId ?? 0);
+
+            //判断是否为超级管理员或者该系统管理员。
+            if (!(isSuper || isSysAdmin))
+            {
+                response.SetNoPermission("删除失败，用户无权限删除按钮。");
+                return Ok(response);
+            }
+
+            existingPermission.UpdateUserId = userInfo.UserId;
             existingPermission.UpdateTime = DateTime.Now;
             existingPermission.IsDelete = true;
 
@@ -330,22 +410,18 @@ namespace UniversalAuthorityManagementSystem.Controllers.Api
             var response = ResponseModelFactory.CreateDataInstance;
             try
             {
-                int? userId = GetLoginUserId();
+                LoginUserInfo userInfo = GetUserInfo();
+                bool isSuper = _menuService.IsSpuerAdministrator(userInfo.UserId);
 
-                if (userId == null)
-                {
-                    response.SetNoPermission();
-                    return Ok(response);
-                }
-
-                var result = _menuService.GetTreeList(userId, appId);
+                List<MenuTreeVM> result = _menuService.GetMenuTree(userInfo.UserId, appId, isSuper);
 
                 response.SetData(result);
                 return Ok(result);
             }
             catch (Exception ex)
             {
-                response.SetError($"Msg: {ex.Message}.\r\n StackTrace: \r\n{ex.StackTrace}");
+                response.SetError();
+                response.Exception = $"Msg: {ex.Message}.\r\n StackTrace: \r\n{ex.StackTrace}";
                 return Ok(response);
             }
         }

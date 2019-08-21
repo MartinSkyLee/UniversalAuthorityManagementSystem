@@ -2,15 +2,17 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using UniversalAuthorityManagement.Models.DBEntities;
 
 namespace UniversalAuthorityManagement.Models.Migrations
 {
     [DbContext(typeof(UniversalAuthorityManagementContext))]
-    partial class UniversalAuthorityManagementContextModelSnapshot : ModelSnapshot
+    [Migration("20190813074708_AddFieldTbRoles")]
+    partial class AddFieldTbRoles
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -85,7 +87,7 @@ namespace UniversalAuthorityManagement.Models.Migrations
 
                     b.Property<string>("Icon")
                         .HasColumnName("icon")
-                        .HasColumnType("varchar(50)");
+                        .HasColumnType("varchar(20)");
 
                     b.Property<short?>("IsDelete")
                         .HasColumnName("is_delete")
@@ -300,14 +302,6 @@ namespace UniversalAuthorityManagement.Models.Migrations
                         .HasColumnName("user_id")
                         .HasColumnType("int(11)");
 
-                    b.Property<DateTime?>("CreateTime")
-                        .HasColumnName("create_time")
-                        .HasColumnType("datetime");
-
-                    b.Property<int?>("CreateUserId")
-                        .HasColumnName("create_user_id")
-                        .HasColumnType("int(11)");
-
                     b.Property<string>("Email")
                         .HasColumnName("email")
                         .HasColumnType("varchar(100)");
@@ -335,14 +329,6 @@ namespace UniversalAuthorityManagement.Models.Migrations
                     b.Property<string>("Telephone")
                         .HasColumnName("telephone")
                         .HasColumnType("varchar(50)");
-
-                    b.Property<DateTime?>("UpdateTime")
-                        .HasColumnName("update_time")
-                        .HasColumnType("datetime");
-
-                    b.Property<int?>("UpdateUserId")
-                        .HasColumnName("update_user_id")
-                        .HasColumnType("int(11)");
 
                     b.HasKey("UserId");
 

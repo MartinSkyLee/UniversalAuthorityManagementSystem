@@ -18,9 +18,20 @@ namespace UniversalAuthorityManagement.Service.Interface
         PageResult GetResultList(QueryParameters queryParameters);
 
         /// <summary>
+        /// 通过用户ID获取应用程序列表数据
+        /// </summary>
+        /// <param name="queryParameters"></param>
+        /// <param name="userId"></param>
+        /// <returns></returns>
+        PageResult GetResultList(QueryParameters queryParameters, int userId);
+
+        /// <summary>
         /// 获取选择角色时的下拉树形表数据
         /// </summary>
         /// <returns></returns>
-        List<AppWithRoleTreeViewModel> GetRolesWithAppTreeJson();
+        List<AppWithRoleTreeViewModel> GetRolesWithAppTreeJson(LoginUserInfo userInfo);
+
+        TbApplication GetSingleApp(int id);
+        void RemoveUserRole(TbRoles item);
     }
 }

@@ -2,15 +2,17 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using UniversalAuthorityManagement.Models.DBEntities;
 
 namespace UniversalAuthorityManagement.Models.Migrations
 {
     [DbContext(typeof(UniversalAuthorityManagementContext))]
-    partial class UniversalAuthorityManagementContextModelSnapshot : ModelSnapshot
+    [Migration("20190820023251_ModifyIconLength")]
+    partial class ModifyIconLength
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

@@ -17,7 +17,7 @@ namespace UniversalAuthorityManagement.Service.Interface
         /// </summary>
         /// <param name="queryParameters"></param>
         /// <returns></returns>
-        PageResult GetResultList(QueryParameters queryParameters);
+        PageResult GetResultList(QueryParameters queryParameters, LoginUserInfo userInfo);
 
         /// <summary>
         ///  新增用户时，判断用户是否重名
@@ -31,7 +31,7 @@ namespace UniversalAuthorityManagement.Service.Interface
         /// </summary>
         /// <param name="user"></param>
         /// <param name="response"></param>
-        void UpdateUser(UserEditViewModel user, ref ResponseModel response);
+        void UpdateUser(UserEditViewModel user, LoginUserInfo userInfo, bool isSysAdmin, ref ResponseModel response);
 
         /// <summary>
         /// 更新用户密码

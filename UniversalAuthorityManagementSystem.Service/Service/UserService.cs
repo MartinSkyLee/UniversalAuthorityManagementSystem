@@ -26,8 +26,8 @@ namespace UniversalAuthorityManagement.Service.Service
             _settings = settings;
         }
 
-        
-        public PageResult GetResultList(QueryParameters queryParameters)
+
+        public PageResult GetResultList(QueryParameters queryParameters, LoginUserInfo userInfo)
         {
             PageResult result = new PageResult();
 
@@ -37,6 +37,18 @@ namespace UniversalAuthorityManagement.Service.Service
                 .AsNoTracking()
                 .Where(u => u.IsDelete == false)
                 .OrderBy(queryParameters.OrderBy, queryParameters.IsDescending());
+
+            bool isSysAdmin = IsSystemAdmin(userInfo.UserId);
+
+            //判断是否为超级管理员或者该系统管理员。
+            if (!(userInfo.IsSuper || isSysAdmin))
+            {
+                return result;
+            }
+            else if (userInfo.IsSuper == false && isSysAdmin == true)
+            {
+                data = data.Where(d => d.CreateUserId == userInfo.UserId || d.UserId == userInfo.UserId);
+            }
 
             if (!string.IsNullOrEmpty(queryParameters.Name))
             {
@@ -64,7 +76,7 @@ namespace UniversalAuthorityManagement.Service.Service
             return result;
         }
 
-        
+
         public bool IsExistingUser(string sysUserName)
         {
             var user = _dbContext.TbSysUser.Where(u => u.SysUserName == sysUserName && u.IsDelete == false).ToList();
@@ -79,7 +91,7 @@ namespace UniversalAuthorityManagement.Service.Service
             }
         }
 
-        public void UpdateUser(UserEditViewModel user, ref ResponseModel response)
+        public void UpdateUser(UserEditViewModel user, LoginUserInfo userInfo, bool isSysAdmin, ref ResponseModel response)
         {
             var existingUser = _dbContext.TbSysUser
                .Include(u => u.TbUserRole)
@@ -93,6 +105,21 @@ namespace UniversalAuthorityManagement.Service.Service
                 return;
             }
 
+            //判断是否为超级管理员或者该系统管理员
+            if (!(userInfo.IsSuper || isSysAdmin))
+            {
+                response.SetNoPermission("编辑失败，无权限编辑用户信息。");
+                return;
+            }
+            else if (userInfo.IsSuper == false && isSysAdmin == true)
+            {
+                if (userInfo.UserId != existingUser.CreateUserId)
+                {
+                    response.SetNoPermission("编辑失败，无权限编辑用户信息。");
+                    return;
+                }
+            }
+
             _mapper.Map(user, existingUser);
 
             try
@@ -101,15 +128,19 @@ namespace UniversalAuthorityManagement.Service.Service
 
                 if (existingUser.TbUserRole.Count() <= 0)
                 {
-                    response.SetBadRequest("新增失败！请选择该用户的角色。");
+                    response.SetBadRequest("编辑失败！请选择该用户的角色。");
                     return;
                 }
+
+                existingUser.UpdateUserId = userInfo.UserId;
+                existingUser.UpdateTime = DateTime.Now;
 
                 Update(existingUser);
             }
             catch (Exception ex)
             {
-                response.SetError($"Msg: {ex.Message}.\r\n StackTrace: \r\n{ex.StackTrace}");
+                response.SetError();
+                response.Exception = $"Msg: {ex.Message}.\r\n StackTrace: \r\n{ex.StackTrace}";
                 return;
             }
 
@@ -156,7 +187,7 @@ namespace UniversalAuthorityManagement.Service.Service
             }
         }
 
-       
+
         public void UpdatePassword(PasswordViewModel password, ref ResponseModel response)
         {
             var existingUser = _dbContext.TbSysUser

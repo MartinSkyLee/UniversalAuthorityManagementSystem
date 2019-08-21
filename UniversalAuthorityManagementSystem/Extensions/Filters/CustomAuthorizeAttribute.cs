@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security.Claims;
 using DHSurvey.Common.Helper;
 using IdentityModel;
 using Microsoft.AspNetCore.Authorization;
@@ -33,11 +34,20 @@ namespace UniversalAuthorityManagementSystem.Extensions.Filters
 
             var response = ResponseModelFactory.CreateInstance;
             var user = context.HttpContext.User;
+            bool isSpuer = Convert.ToBoolean(user.FindFirstValue("is_super"));
+
+            if (isSpuer)
+            {
+                return;
+            }
 
             if (!user.Identity.IsAuthenticated)
             {
-                response.SetNoPermission();
-                context.Result = new UnauthorizedObjectResult(response);
+                response.SetForbidden();
+                context.Result = new ObjectResult(response)
+                {
+                    StatusCode = 403
+                };
             }
             else
             {
@@ -46,7 +56,7 @@ namespace UniversalAuthorityManagementSystem.Extensions.Filters
                 //获取Redis缓存内的权限url
                 if (!CommonManager.CacheObj.Exists<RedisCacheHelper>(strUserId))
                 {
-                    response.SetNoPermission();
+                    response.SetNoPermission("无权限，未发现用户ID");
                     context.Result = new UnauthorizedObjectResult(response);
                 }
                 else
@@ -55,7 +65,7 @@ namespace UniversalAuthorityManagementSystem.Extensions.Filters
 
                     if (!urls.Exists(u => (u != null ? u.ToLower() : "") == requestUrl.ToLower()))
                     {
-                        response.SetNoPermission();
+                        response.SetNoPermission("用户无权限操作");
                         context.Result = new UnauthorizedObjectResult(response);
                     }
                 }
